@@ -1,0 +1,6 @@
+{
+  "name": "ظلم الشعوب المسلمة",
+  "description": "تطبيق كتاب ظلم الشعوب المسلمة تحت شعار الوطنية للدكتور مالك عبدالرحمن الرميمة",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

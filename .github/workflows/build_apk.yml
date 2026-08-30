@@ -1,0 +1,100 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Sign APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Grant Execute Permission to Gradle
+        run: chmod +x gradlew || true
+
+      - name: Prepare Keystore from GitHub Secrets
+        id: prepare_keystore
+        run: |
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "Decoding KEYSTORE_BASE64 from Secrets..."
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "$GITHUB_WORKSPACE/release.keystore"
+            echo "KEYSTORE_EXISTS=true" >> $GITHUB_ENV
+            echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/release.keystore" >> $GITHUB_ENV
+          else
+            echo "KEYSTORE_BASE64 secret is not set, falling back to debug keystore."
+            echo "KEYSTORE_EXISTS=false" >> $GITHUB_ENV
+          fi
+
+      - name: Prepare .env configuration
+        run: |
+          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
+          echo "Created .env configuration successfully."
+
+      - name: Build Release and Debug APKs
+        env:
+          KEYSTORE_PATH: ${{ env.KEYSTORE_PATH }}
+          CM_KEYSTORE_PASSWORD: ${{ secrets.CM_KEYSTORE_PASSWORD }}
+          CM_KEY_ALIAS: ${{ secrets.CM_KEY_ALIAS }}
+          CM_KEY_PASSWORD: ${{ secrets.CM_KEY_PASSWORD }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -f "./gradlew" ]; then
+            ./gradlew assembleRelease assembleDebug --stacktrace
+          else
+            gradle assembleRelease assembleDebug --stacktrace
+          fi
+
+      - name: Verify Generated APK Files
+        id: find_apks
+        run: |
+          echo "Searching for generated APK files..."
+          find app/build/outputs/apk/ -type f -name "*.apk"
+          
+          # Create dedicated directory for easy distribution
+          mkdir -p build_output_apks
+          find app/build/outputs/apk/ -type f -name "*.apk" -exec cp {} build_output_apks/ \;
+          ls -la build_output_apks/
+
+      - name: Upload APK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: IslamicPeoplesOppression-APK
+          path: build_output_apks/*.apk
+          retention-days: 30
+
+      - name: Create GitHub Release & Upload APK
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-${{ github.run_number }}
+          name: "إصدار التطبيق v1.0.0 (Build #${{ github.run_number }})"
+          body: |
+            ### 📱 تطبيق كتاب: ظلم الشعوب المسلمة تحت شعار الوطنية
+            **المؤلف:** د. مالك عبدالرحمن الرميمة
+
+            #### 🚀 روابط التحميل المباشرة:
+            - يمكنك تحميل ملف التثبيت المباشر **APK** من قائمة الأصول (Assets) في الأسفل.
+            - متوافق مع نظام **Android 15** وجميع الأجهزة الحديثة.
+            - يحتوي على القراءة الصوتية الكاملة، الفهرس، البحث، وتخصيص الخط والسمات.
+          files: build_output_apks/*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
